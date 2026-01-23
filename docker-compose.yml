@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gitpulse-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # GPU support is optional - uncomment below if nvidia GPU available
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  gitpulse:
+    build: .
+    container_name: gitpulse-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./repositories:/app/repositories:ro
+      - ./data:/app/data
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=codellama:7b
+      - DATABASE_URL=sqlite:///data/gitpulse.db
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # One-time model pull service
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: gitpulse-ollama-pull
+    depends_on:
+      - ollama
+    entrypoint: >
+      sh -c "
+        sleep 10 &&
+        ollama pull codellama:7b
+      "
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    restart: "no"
+
+volumes:
+  ollama_data:

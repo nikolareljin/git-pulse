@@ -1,0 +1,2 @@
+# Vendor directory for git submodules
+# Run: git submodule update --init --recursive

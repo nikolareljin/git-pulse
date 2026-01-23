@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitPulse - Repository Contributor Analysis</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>GitPulse</h1>
+            <p class="tagline">AI-Powered Git Repository Contributor Analysis</p>
+        </div>
+        <div class="status-bar">
+            <span id="ollama-status" class="status-badge">Checking Ollama...</span>
+            <button id="analyze-all-btn" class="btn btn-primary">Analyze All Repositories</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Global Score Card -->
+        <section class="global-score-section">
+            <div class="score-card-large" id="global-score-card">
+                <div class="score-header">
+                    <h2>Portfolio Score</h2>
+                    <div class="grade-badge" id="global-grade">-</div>
+                </div>
+                <div class="score-value" id="global-overall-score">-</div>
+                <div class="score-breakdown">
+                    <div class="score-item">
+                        <span class="label">Activity</span>
+                        <div class="progress-bar">
+                            <div class="progress" id="global-activity-bar" style="width: 0%"></div>
+                        </div>
+                        <span class="value" id="global-activity-score">-</span>
+                    </div>
+                    <div class="score-item">
+                        <span class="label">Health</span>
+                        <div class="progress-bar">
+                            <div class="progress" id="global-health-bar" style="width: 0%"></div>
+                        </div>
+                        <span class="value" id="global-health-score">-</span>
+                    </div>
+                    <div class="score-item">
+                        <span class="label">Quality</span>
+                        <div class="progress-bar">
+                            <div class="progress" id="global-quality-bar" style="width: 0%"></div>
+                        </div>
+                        <span class="value" id="global-quality-score">-</span>
+                    </div>
+                    <div class="score-item">
+                        <span class="label">Diversity</span>
+                        <div class="progress-bar">
+                            <div class="progress" id="global-diversity-bar" style="width: 0%"></div>
+                        </div>
+                        <span class="value" id="global-diversity-score">-</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats Overview -->
+        <section class="stats-overview">
+            <div class="stat-card">
+                <div class="stat-value" id="total-repos">-</div>
+                <div class="stat-label">Repositories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-contributors">-</div>
+                <div class="stat-label">Contributors</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-commits">-</div>
+                <div class="stat-label">Commits</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avg-quality">-</div>
+                <div class="stat-label">Avg Quality Score</div>
+            </div>
+        </section>
+
+        <!-- Repository Scores -->
+        <section class="repo-scores-section">
+            <h2>Repository Scores</h2>
+            <div id="repo-scores-grid" class="repo-scores-grid">
+                <p class="loading">Loading repository scores...</p>
+            </div>
+        </section>
+
+        <!-- Repository Selection -->
+        <section class="repositories-section">
+            <h2>Repositories</h2>
+            <div class="repo-actions">
+                <button id="discover-btn" class="btn btn-secondary">Discover Repositories</button>
+            </div>
+            <div id="repositories-list" class="repositories-list">
+                <p class="loading">Loading repositories...</p>
+            </div>
+        </section>
+
+        <!-- Leaderboard -->
+        <section class="leaderboard-section">
+            <div class="section-header">
+                <h2>Top Contributors</h2>
+                <select id="leaderboard-repo-select">
+                    <option value="">Global (All Repositories)</option>
+                </select>
+            </div>
+            <div id="leaderboard" class="leaderboard">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Contributor</th>
+                            <th>Commits</th>
+                            <th>Lines Changed</th>
+                            <th>PRs</th>
+                            <th>Quality</th>
+                            <th>Impact</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                        <tr><td colspan="7" class="loading">Loading leaderboard...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Charts -->
+        <section class="charts-section">
+            <div class="chart-container">
+                <h3>Repository Scores Comparison</h3>
+                <canvas id="repo-scores-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>Contribution Distribution</h3>
+                <canvas id="contribution-chart"></canvas>
+            </div>
+        </section>
+
+        <!-- Analysis Status -->
+        <section class="status-section">
+            <h2>Analysis History</h2>
+            <div id="analysis-status" class="analysis-status">
+                <p class="loading">Loading status...</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>GitPulse v0.1.0 | AI-powered by Ollama</p>
+    </footer>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

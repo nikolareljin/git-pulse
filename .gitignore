@@ -1,0 +1,77 @@
+# ===================================
+# Environment & Secrets
+# ===================================
+.env
+.env.local
+.env.*.local
+.envrc
+
+# ===================================
+# Data & Repositories (user-specific)
+# ===================================
+data/
+repositories/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ===================================
+# Python
+# ===================================
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.venv/
+venv/
+env/
+.python-version
+__pypackages__/
+.Python
+*.egg-info/
+dist/
+build/
+pip-log.txt
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.uv/
+
+# ===================================
+# IDE & Editors
+# ===================================
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===================================
+# OS Generated
+# ===================================
+.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+
+# ===================================
+# Logs
+# ===================================
+*.log
+logs/
+
+# ===================================
+# Docker
+# ===================================
+docker-compose.override.yml
+
+# ===================================
+# Test & Coverage
+# ===================================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
