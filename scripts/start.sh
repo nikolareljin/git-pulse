@@ -24,21 +24,26 @@ cd "$ROOT_DIR"
 # Parse arguments
 USE_DOCKER=false
 DEV_MODE=false
+REBUILD_DOCKER=false
 
 for arg in "$@"; do
     case $arg in
         --docker)
             USE_DOCKER=true
             ;;
+        -b|--build)
+            REBUILD_DOCKER=true
+            ;;
         --dev)
             DEV_MODE=true
             ;;
         --help|-h)
-            echo "Usage: $0 [--docker] [--dev]"
+            echo "Usage: $0 [--docker] [--dev] [-b|--build]"
             echo ""
             echo "Options:"
             echo "  --docker    Use Docker Compose to start services"
             echo "  --dev       Start in development mode with auto-reload"
+            echo "  -b, --build Rebuild Docker containers before starting"
             exit 0
             ;;
     esac
@@ -54,7 +59,11 @@ if [[ "$USE_DOCKER" == "true" ]]; then
     fi
 
     # Start services (using docker compose v2)
-    docker compose up -d
+    if [[ "$REBUILD_DOCKER" == "true" ]]; then
+        docker compose up -d --build
+    else
+        docker compose up -d
+    fi
 
     log_info "Waiting for services to start..."
     sleep 5

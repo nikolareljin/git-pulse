@@ -51,6 +51,14 @@ class RepoInfo:
     total_commits: int = 0
 
 
+@dataclass
+class PullRequestInfo:
+    """Pull request data inferred from merge commits."""
+    merge_sha: str
+    title: str
+    commit_shas: List[str]
+
+
 class GitAnalyzer:
     """Analyzes Git repositories"""
 
@@ -215,6 +223,50 @@ class GitAnalyzer:
         except Exception as e:
             logger.error(f"Error getting commit {sha}: {e}")
             return None
+
+    def iter_pull_requests(self, max_prs: int = None) -> Generator[PullRequestInfo, None, None]:
+        """Infer pull requests from merge commits and return their commit SHAs."""
+        if not self.repo:
+            return
+
+        seen = set()
+        count = 0
+
+        try:
+            for commit in self.repo.iter_commits("--all"):
+                if commit.hexsha in seen:
+                    continue
+
+                if len(commit.parents) < 2:
+                    continue
+
+                message = commit.message.strip()
+                is_pr = any(
+                    pattern in message.lower()
+                    for pattern in ["merge pull request", "merged pr", "pull request #"]
+                )
+                if not is_pr:
+                    continue
+
+                seen.add(commit.hexsha)
+                count += 1
+                if max_prs and count > max_prs:
+                    break
+
+                parent_base = commit.parents[0].hexsha
+                parent_head = commit.parents[1].hexsha
+                commit_shas = [
+                    c.hexsha for c in self.repo.iter_commits(f"{parent_base}..{parent_head}")
+                ]
+
+                title = message.splitlines()[0] if message else commit.hexsha
+                yield PullRequestInfo(
+                    merge_sha=commit.hexsha,
+                    title=title,
+                    commit_shas=commit_shas
+                )
+        except Exception as e:
+            logger.warning(f"Error iterating pull requests: {e}")
 
 
 def discover_repositories() -> List[Path]:

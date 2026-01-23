@@ -21,6 +21,8 @@ const elements = {
     repoScoresGrid: document.getElementById('repo-scores-grid'),
     leaderboardBody: document.getElementById('leaderboard-body'),
     leaderboardRepoSelect: document.getElementById('leaderboard-repo-select'),
+    mergeContributorsBtn: document.getElementById('merge-contributors-btn'),
+    unmergeContributorsBtn: document.getElementById('unmerge-contributors-btn'),
     analysisStatus: document.getElementById('analysis-status'),
     totalRepos: document.getElementById('total-repos'),
     totalContributors: document.getElementById('total-contributors'),
@@ -67,6 +69,13 @@ function getGradeClass(grade) {
     if (grade.startsWith('C')) return 'grade-c';
     if (grade.startsWith('D')) return 'grade-d';
     return 'grade-f';
+}
+
+const gradeTooltip = 'Grade scale: A+ 90-100, A 85-89.9, A- 80-84.9, B+ 75-79.9, B 70-74.9, B- 65-69.9, C+ 60-64.9, C 55-59.9, C- 50-54.9, D+ 45-49.9, D 40-44.9, F below 40.';
+
+function getSelectedContributorEmails() {
+    const checkboxes = elements.leaderboardBody.querySelectorAll('.merge-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.dataset.email);
 }
 
 // API Functions
@@ -183,9 +192,9 @@ function updateRepoScoresGrid() {
         <div class="repo-score-card">
             <div class="card-header">
                 <span class="repo-name">${repo.name}</span>
-                <span class="repo-grade ${getGradeClass(repo.grade)}">${repo.grade}</span>
+                <span class="repo-grade ${getGradeClass(repo.grade)} tooltip" data-tooltip="${gradeTooltip}">${repo.grade}</span>
             </div>
-            <div class="overall-score">${repo.overall_score.toFixed(1)}</div>
+            <div class="overall-score tooltip" data-tooltip="Overall repository score (0-100). Higher is better.">${repo.overall_score.toFixed(1)}</div>
             <div class="mini-scores">
                 <div class="mini-score">
                     <span>Commits</span>
@@ -335,29 +344,32 @@ async function analyzeAllRepositories() {
 
 // Load Leaderboard
 async function loadLeaderboard(repoName = '') {
-    elements.leaderboardBody.innerHTML = '<tr><td colspan="7" class="loading">Loading leaderboard...</td></tr>';
+    elements.leaderboardBody.innerHTML = '<tr><td colspan="9" class="loading">Loading leaderboard...</td></tr>';
 
     try {
         const endpoint = repoName ? `/leaderboard/${repoName}` : '/leaderboard';
         leaderboard = await fetchAPI(endpoint);
 
         if (leaderboard.length === 0) {
-            elements.leaderboardBody.innerHTML = '<tr><td colspan="7" class="loading">No contributors found. Run analysis first.</td></tr>';
+            elements.leaderboardBody.innerHTML = '<tr><td colspan="9" class="loading">No contributors found. Run analysis first.</td></tr>';
             return;
         }
 
         elements.leaderboardBody.innerHTML = leaderboard.map(entry => `
             <tr>
+                <td><input type="checkbox" class="merge-checkbox" data-email="${entry.email}"></td>
                 <td class="rank rank-${entry.rank}">#${entry.rank}</td>
                 <td>
                     <div class="contributor-name">${entry.name}</div>
                     <div class="contributor-email">${entry.email}</div>
+                    ${entry.merged_count ? `<div class="merged-badge tooltip" data-tooltip="Merged: ${entry.merged_emails.join(', ')}">Merged (${entry.merged_count})</div>` : ''}
                 </td>
                 <td>${formatNumber(entry.commits)}</td>
                 <td>${formatNumber(entry.lines_changed)}</td>
                 <td>${entry.prs}</td>
                 <td><span class="score-badge ${getScoreClass(entry.quality_score)}">${entry.quality_score}</span></td>
                 <td><span class="score-badge ${getScoreClass(entry.impact_score)}">${entry.impact_score}</span></td>
+                <td><span class="score-badge ${entry.pr_prs_analyzed ? getScoreClass(entry.pr_quality_score) : 'score-medium'}" title="${entry.pr_prs_analyzed} PRs analyzed">${entry.pr_prs_analyzed ? entry.pr_quality_score : '-'}</span></td>
             </tr>
         `).join('');
 
@@ -365,7 +377,51 @@ async function loadLeaderboard(repoName = '') {
         updateContributionChart();
 
     } catch (error) {
-        elements.leaderboardBody.innerHTML = `<tr><td colspan="7" class="loading">Error: ${error.message}</td></tr>`;
+        elements.leaderboardBody.innerHTML = `<tr><td colspan="9" class="loading">Error: ${error.message}</td></tr>`;
+    }
+}
+
+async function mergeSelectedContributors() {
+    const emails = getSelectedContributorEmails();
+    if (emails.length < 2) {
+        showToast('Select at least two contributors to merge', 'error');
+        return;
+    }
+    const [primaryEmail, ...mergeEmails] = emails;
+    try {
+        await fetchAPI('/contributors/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                primary_email: primaryEmail,
+                merge_emails: mergeEmails
+            })
+        });
+        showToast(`Merged ${mergeEmails.length} contributors into ${primaryEmail}`);
+        await loadLeaderboard(elements.leaderboardRepoSelect.value);
+        await loadStats();
+    } catch (error) {
+        showToast(`Merge failed: ${error.message}`, 'error');
+    }
+}
+
+async function unmergeSelectedContributors() {
+    const emails = getSelectedContributorEmails();
+    if (emails.length < 1) {
+        showToast('Select contributors to unmerge', 'error');
+        return;
+    }
+    try {
+        await fetchAPI('/contributors/unmerge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emails })
+        });
+        showToast('Unmerge completed');
+        await loadLeaderboard(elements.leaderboardRepoSelect.value);
+        await loadStats();
+    } catch (error) {
+        showToast(`Unmerge failed: ${error.message}`, 'error');
     }
 }
 
@@ -511,6 +567,8 @@ elements.discoverBtn.addEventListener('click', discoverRepositories);
 elements.leaderboardRepoSelect.addEventListener('change', (e) => {
     loadLeaderboard(e.target.value);
 });
+elements.mergeContributorsBtn.addEventListener('click', mergeSelectedContributors);
+elements.unmergeContributorsBtn.addEventListener('click', unmergeSelectedContributors);
 
 // Initialize
 async function init() {

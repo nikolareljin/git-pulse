@@ -24,34 +24,37 @@
         <section class="global-score-section">
             <div class="score-card-large" id="global-score-card">
                 <div class="score-header">
-                    <h2>Portfolio Score</h2>
-                    <div class="grade-badge" id="global-grade">-</div>
+                    <h2>
+                        Portfolio Score
+                        <span class="tooltip-icon" data-tooltip="Portfolio grade uses: A+ 90-100, A 85-89.9, A- 80-84.9, B+ 75-79.9, B 70-74.9, B- 65-69.9, C+ 60-64.9, C 55-59.9, C- 50-54.9, D+ 45-49.9, D 40-44.9, F below 40.">i</span>
+                    </h2>
+                    <div class="grade-badge tooltip" id="global-grade" data-tooltip="Overall portfolio grade based on combined repository scores.">-</div>
                 </div>
                 <div class="score-value" id="global-overall-score">-</div>
                 <div class="score-breakdown">
                     <div class="score-item">
-                        <span class="label">Activity</span>
+                        <span class="label tooltip" data-tooltip="Activity reflects commit volume and recent development pace.">Activity</span>
                         <div class="progress-bar">
                             <div class="progress" id="global-activity-bar" style="width: 0%"></div>
                         </div>
                         <span class="value" id="global-activity-score">-</span>
                     </div>
                     <div class="score-item">
-                        <span class="label">Health</span>
+                        <span class="label tooltip" data-tooltip="Health reflects consistency, stability, and collaboration signals.">Health</span>
                         <div class="progress-bar">
                             <div class="progress" id="global-health-bar" style="width: 0%"></div>
                         </div>
                         <span class="value" id="global-health-score">-</span>
                     </div>
                     <div class="score-item">
-                        <span class="label">Quality</span>
+                        <span class="label tooltip" data-tooltip="Quality reflects commit hygiene and code quality signals.">Quality</span>
                         <div class="progress-bar">
                             <div class="progress" id="global-quality-bar" style="width: 0%"></div>
                         </div>
                         <span class="value" id="global-quality-score">-</span>
                     </div>
                     <div class="score-item">
-                        <span class="label">Diversity</span>
+                        <span class="label tooltip" data-tooltip="Diversity reflects contributor distribution and shared ownership.">Diversity</span>
                         <div class="progress-bar">
                             <div class="progress" id="global-diversity-bar" style="width: 0%"></div>
                         </div>
@@ -104,25 +107,31 @@
         <section class="leaderboard-section">
             <div class="section-header">
                 <h2>Top Contributors</h2>
-                <select id="leaderboard-repo-select">
-                    <option value="">Global (All Repositories)</option>
-                </select>
+                <div class="leaderboard-controls">
+                    <select id="leaderboard-repo-select">
+                        <option value="">Global (All Repositories)</option>
+                    </select>
+                    <button id="merge-contributors-btn" class="btn btn-secondary tooltip" data-tooltip="Merge selected contributors into one entry. The first selected becomes the primary.">Merge Selected</button>
+                    <button id="unmerge-contributors-btn" class="btn btn-secondary tooltip" data-tooltip="Unmerge selected contributors. Selecting a primary unmerges its whole group.">Unmerge Selected</button>
+                </div>
             </div>
             <div id="leaderboard" class="leaderboard">
                 <table>
                     <thead>
                         <tr>
+                            <th></th>
                             <th>Rank</th>
                             <th>Contributor</th>
                             <th>Commits</th>
                             <th>Lines Changed</th>
                             <th>PRs</th>
-                            <th>Quality</th>
-                            <th>Impact</th>
+                            <th><span class="tooltip" data-tooltip="Quality score (0-100). Higher means better code health signals.">Quality</span></th>
+                            <th><span class="tooltip" data-tooltip="Impact score (0-100). Higher means broader contribution impact.">Impact</span></th>
+                            <th><span class="tooltip" data-tooltip="PR Quality score (0-100) based on analyzed PR changes for this contributor.">PR Quality</span></th>
                         </tr>
                     </thead>
                     <tbody id="leaderboard-body">
-                        <tr><td colspan="7" class="loading">Loading leaderboard...</td></tr>
+                        <tr><td colspan="9" class="loading">Loading leaderboard...</td></tr>
                     </tbody>
                 </table>
             </div>

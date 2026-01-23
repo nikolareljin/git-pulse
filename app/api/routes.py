@@ -1,20 +1,22 @@
 """API Routes for GitPulse"""
 
 import logging
+import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel
-from sqlalchemy import select, func
+from pydantic import BaseModel, Field
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import (
-    Repository, Contributor, Commit, ContributorStats, AnalysisRun,
-    get_session
+    Repository, Contributor, Commit, ContributorStats, AnalysisRun, ContributorMerge,
+    CodebaseAnalysis, get_session
 )
 from app.analyzer import GitAnalyzer, ContributorAnalyzer, QualityAnalyzer, OllamaClient
+from app.analyzer.codebase import analyze_codebase
 from app.analyzer.git_analyzer import discover_repositories
 
 import config
@@ -50,6 +52,8 @@ class ContributorResponse(BaseModel):
     total_prs: int
     quality_score: float
     impact_score: float
+    pr_quality_score: float = 0.0
+    pr_prs_analyzed: int = 0
     first_commit: Optional[datetime]
     last_commit: Optional[datetime]
 
@@ -67,6 +71,8 @@ class ContributorStatsResponse(BaseModel):
     prs: int
     quality_score: float
     impact_score: float
+    pr_quality_score: float = 0.0
+    pr_prs_analyzed: int = 0
     rank: Optional[int]
 
     class Config:
@@ -82,6 +88,19 @@ class LeaderboardEntry(BaseModel):
     prs: int
     quality_score: float
     impact_score: float
+    pr_quality_score: float = 0.0
+    pr_prs_analyzed: int = 0
+    merged_count: int = 0
+    merged_emails: List[str] = Field(default_factory=list)
+
+
+class MergeContributorsRequest(BaseModel):
+    primary_email: str
+    merge_emails: List[str]
+
+
+class UnmergeContributorsRequest(BaseModel):
+    emails: List[str]
 
 
 class AnalysisStatus(BaseModel):
@@ -97,6 +116,55 @@ class OllamaStatus(BaseModel):
     available: bool
     host: str
     model: str
+
+
+class CodebaseAnalysisResponse(BaseModel):
+    repository: str
+    overall_score: float
+    complexity_score: float
+    dependency_score: float
+    comment_score: float
+    test_score: float
+    metrics: Dict
+
+
+# ============== Merge Helpers ==============
+
+async def _load_merge_maps(session: AsyncSession) -> Tuple[Dict[int, int], Dict[int, List[int]]]:
+    """Return merged->primary and primary->merged maps."""
+    result = await session.execute(select(ContributorMerge))
+    merges = result.scalars().all()
+
+    merged_to_primary: Dict[int, int] = {}
+    primary_to_merged: Dict[int, List[int]] = {}
+
+    for merge in merges:
+        merged_to_primary[merge.merged_contributor_id] = merge.primary_contributor_id
+        primary_to_merged.setdefault(merge.primary_contributor_id, []).append(merge.merged_contributor_id)
+
+    return merged_to_primary, primary_to_merged
+
+
+def _resolve_primary_id(contributor_id: int, merged_to_primary: Dict[int, int]) -> int:
+    """Resolve to the top-level primary contributor id."""
+    seen = set()
+    current = contributor_id
+    while current in merged_to_primary:
+        if current in seen:
+            break
+        seen.add(current)
+        current = merged_to_primary[current]
+    return current
+
+
+async def _get_contributor_by_email(session: AsyncSession, email: str) -> Contributor:
+    result = await session.execute(
+        select(Contributor).where(Contributor.email == email.lower())
+    )
+    contributor = result.scalar_one_or_none()
+    if not contributor:
+        raise HTTPException(status_code=404, detail=f"Contributor not found: {email}")
+    return contributor
 
 
 # ============== Repository Endpoints ==============
@@ -166,6 +234,48 @@ async def get_repository(name: str, session: AsyncSession = Depends(get_session)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
     return repo
+
+
+@router.get("/repositories/{name}/codebase", response_model=CodebaseAnalysisResponse)
+async def get_codebase_analysis(name: str, session: AsyncSession = Depends(get_session)):
+    """Get static codebase analysis for a repository."""
+    result = await session.execute(
+        select(Repository).where(Repository.name == name)
+    )
+    repo = result.scalar_one_or_none()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    result = await session.execute(
+        select(CodebaseAnalysis).where(CodebaseAnalysis.repository_id == repo.id)
+    )
+    analysis = result.scalar_one_or_none()
+
+    if not analysis:
+        report = analyze_codebase(Path(repo.path))
+        analysis = CodebaseAnalysis(
+            repository_id=repo.id,
+            overall_score=report.overall_score,
+            complexity_score=report.complexity_score,
+            dependency_score=report.dependency_score,
+            comment_score=report.comment_score,
+            test_score=report.test_score,
+            metrics_json=json.dumps(report.to_dict()),
+        )
+        session.add(analysis)
+        await session.commit()
+        await session.refresh(analysis)
+
+    metrics = json.loads(analysis.metrics_json) if analysis.metrics_json else {}
+    return CodebaseAnalysisResponse(
+        repository=repo.name,
+        overall_score=analysis.overall_score,
+        complexity_score=analysis.complexity_score,
+        dependency_score=analysis.dependency_score,
+        comment_score=analysis.comment_score,
+        test_score=analysis.test_score,
+        metrics=metrics,
+    )
 
 
 @router.post("/repositories/{name}/analyze")
@@ -270,6 +380,102 @@ async def get_contributor(email: str, session: AsyncSession = Depends(get_sessio
     return contributor
 
 
+@router.post("/contributors/merge")
+async def merge_contributors(
+    request: MergeContributorsRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """Merge multiple contributors into a single primary contributor"""
+    if not request.merge_emails:
+        raise HTTPException(status_code=400, detail="merge_emails must not be empty")
+
+    primary = await _get_contributor_by_email(session, request.primary_email)
+    merged_to_primary, primary_to_merged = await _load_merge_maps(session)
+    primary_id = _resolve_primary_id(primary.id, merged_to_primary)
+
+    to_merge_ids = set()
+    for email in request.merge_emails:
+        if email.lower() == primary.email.lower():
+            continue
+        contributor = await _get_contributor_by_email(session, email)
+        candidate_primary = _resolve_primary_id(contributor.id, merged_to_primary)
+        if candidate_primary == primary_id:
+            continue
+        group_ids = [candidate_primary] + primary_to_merged.get(candidate_primary, [])
+        to_merge_ids.update(group_ids)
+
+    if not to_merge_ids:
+        return {"message": "No contributors to merge", "primary_email": primary.email, "merged_emails": []}
+
+    # Remove any existing merges for these contributors to avoid conflicts
+    await session.execute(
+        delete(ContributorMerge).where(
+            (ContributorMerge.merged_contributor_id.in_(to_merge_ids)) |
+            (ContributorMerge.primary_contributor_id.in_(to_merge_ids))
+        )
+    )
+
+    # Create new merge mappings
+    for merged_id in to_merge_ids:
+        if merged_id == primary_id:
+            continue
+        session.add(
+            ContributorMerge(
+                primary_contributor_id=primary_id,
+                merged_contributor_id=merged_id
+            )
+        )
+
+    await session.commit()
+
+    result = await session.execute(
+        select(Contributor).where(Contributor.id.in_(to_merge_ids))
+    )
+    merged_emails = [c.email for c in result.scalars().all() if c.id != primary_id]
+
+    return {
+        "message": "Contributors merged",
+        "primary_email": primary.email,
+        "merged_emails": merged_emails
+    }
+
+
+@router.post("/contributors/unmerge")
+async def unmerge_contributors(
+    request: UnmergeContributorsRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """Unmerge contributors back to individual entries"""
+    if not request.emails:
+        raise HTTPException(status_code=400, detail="emails must not be empty")
+
+    merged_to_primary, _ = await _load_merge_maps(session)
+    removed = 0
+
+    for email in request.emails:
+        contributor = await _get_contributor_by_email(session, email)
+        primary_id = _resolve_primary_id(contributor.id, merged_to_primary)
+
+        if contributor.id != primary_id:
+            result = await session.execute(
+                delete(ContributorMerge).where(
+                    ContributorMerge.merged_contributor_id == contributor.id
+                )
+            )
+            removed += result.rowcount or 0
+        else:
+            result = await session.execute(
+                delete(ContributorMerge).where(
+                    ContributorMerge.primary_contributor_id == primary_id
+                )
+            )
+            removed += result.rowcount or 0
+
+    await session.commit()
+
+    return {"message": "Contributors unmerged", "removed": removed}
+
+
 # ============== Leaderboard Endpoints ==============
 
 @router.get("/leaderboard", response_model=List[LeaderboardEntry])
@@ -279,24 +485,86 @@ async def global_leaderboard(
 ):
     """Get global contributor leaderboard"""
     result = await session.execute(
-        select(Contributor)
-        .order_by(Contributor.impact_score.desc())
-        .limit(limit)
+        select(ContributorStats, Contributor)
+        .join(Contributor, ContributorStats.contributor_id == Contributor.id)
     )
-    contributors = result.scalars().all()
+    rows = result.all()
+
+    merged_to_primary, _ = await _load_merge_maps(session)
+    contributors_by_id = {c.id: c for _, c in rows}
+    groups: Dict[int, Dict[str, object]] = {}
+
+    for stats, contributor in rows:
+        primary_id = _resolve_primary_id(contributor.id, merged_to_primary)
+        group = groups.setdefault(primary_id, {
+            "commits": 0,
+            "lines_changed": 0,
+            "prs": 0,
+            "quality_weight_sum": 0.0,
+            "impact_weight_sum": 0.0,
+            "pr_quality_weight_sum": 0.0,
+            "pr_prs_analyzed": 0,
+            "weight_total": 0,
+            "merged_emails": [],
+        })
+
+        weight = max(1, stats.commits)
+        group["commits"] += stats.commits
+        group["lines_changed"] += stats.lines_added + stats.lines_removed
+        group["prs"] += stats.prs
+        group["quality_weight_sum"] += stats.quality_score * weight
+        group["impact_weight_sum"] += stats.impact_score * weight
+        group["pr_quality_weight_sum"] += stats.pr_quality_score * max(1, stats.pr_prs_analyzed)
+        group["pr_prs_analyzed"] += stats.pr_prs_analyzed
+        group["weight_total"] += weight
+        if contributor.id != primary_id:
+            group["merged_emails"].append(contributor.email)
+
+    entries = []
+    for primary_id, group in groups.items():
+        primary = contributors_by_id.get(primary_id)
+        if not primary:
+            continue
+        weight_total = group["weight_total"] or 1
+        quality_score = group["quality_weight_sum"] / weight_total
+        impact_score = group["impact_weight_sum"] / weight_total
+        pr_prs_analyzed = group["pr_prs_analyzed"]
+        pr_quality_score = (
+            group["pr_quality_weight_sum"] / max(1, pr_prs_analyzed)
+            if pr_prs_analyzed else 0.0
+        )
+        entries.append({
+            "email": primary.email,
+            "name": primary.name,
+            "commits": group["commits"],
+            "lines_changed": group["lines_changed"],
+            "prs": group["prs"],
+            "quality_score": round(quality_score, 1),
+            "impact_score": round(impact_score, 1),
+            "pr_quality_score": round(pr_quality_score, 1),
+            "pr_prs_analyzed": pr_prs_analyzed,
+            "merged_emails": group["merged_emails"],
+        })
+
+    entries.sort(key=lambda x: x["impact_score"], reverse=True)
+    entries = entries[:limit]
 
     return [
         LeaderboardEntry(
             rank=i + 1,
-            email=c.email,
-            name=c.name,
-            commits=c.total_commits,
-            lines_changed=c.total_lines_added + c.total_lines_removed,
-            prs=c.total_prs,
-            quality_score=round(c.quality_score, 1),
-            impact_score=round(c.impact_score, 1)
+            email=entry["email"],
+            name=entry["name"],
+            commits=entry["commits"],
+            lines_changed=entry["lines_changed"],
+            prs=entry["prs"],
+            quality_score=entry["quality_score"],
+            impact_score=entry["impact_score"],
+            pr_quality_score=entry["pr_quality_score"],
+            pr_prs_analyzed=entry["pr_prs_analyzed"],
+            merged_count=len(entry["merged_emails"]),
+            merged_emails=entry["merged_emails"],
         )
-        for i, c in enumerate(contributors)
+        for i, entry in enumerate(entries)
     ]
 
 
@@ -320,23 +588,85 @@ async def repository_leaderboard(
         select(ContributorStats, Contributor)
         .join(Contributor, ContributorStats.contributor_id == Contributor.id)
         .where(ContributorStats.repository_id == repo.id)
-        .order_by(ContributorStats.impact_score.desc())
-        .limit(limit)
     )
     rows = result.all()
+
+    merged_to_primary, _ = await _load_merge_maps(session)
+    result_all = await session.execute(select(Contributor))
+    contributors_by_id = {c.id: c for c in result_all.scalars().all()}
+    groups: Dict[int, Dict[str, object]] = {}
+
+    for stats, contributor in rows:
+        primary_id = _resolve_primary_id(contributor.id, merged_to_primary)
+        group = groups.setdefault(primary_id, {
+            "commits": 0,
+            "lines_changed": 0,
+            "prs": 0,
+            "quality_weight_sum": 0.0,
+            "impact_weight_sum": 0.0,
+            "pr_quality_weight_sum": 0.0,
+            "pr_prs_analyzed": 0,
+            "weight_total": 0,
+            "merged_emails": [],
+        })
+
+        weight = max(1, stats.commits)
+        group["commits"] += stats.commits
+        group["lines_changed"] += stats.lines_added + stats.lines_removed
+        group["prs"] += stats.prs
+        group["quality_weight_sum"] += stats.quality_score * weight
+        group["impact_weight_sum"] += stats.impact_score * weight
+        group["pr_quality_weight_sum"] += stats.pr_quality_score * max(1, stats.pr_prs_analyzed)
+        group["pr_prs_analyzed"] += stats.pr_prs_analyzed
+        group["weight_total"] += weight
+        if contributor.id != primary_id:
+            group["merged_emails"].append(contributor.email)
+
+    entries = []
+    for primary_id, group in groups.items():
+        primary = contributors_by_id.get(primary_id)
+        if not primary:
+            continue
+        weight_total = group["weight_total"] or 1
+        quality_score = group["quality_weight_sum"] / weight_total
+        impact_score = group["impact_weight_sum"] / weight_total
+        pr_prs_analyzed = group["pr_prs_analyzed"]
+        pr_quality_score = (
+            group["pr_quality_weight_sum"] / max(1, pr_prs_analyzed)
+            if pr_prs_analyzed else 0.0
+        )
+        entries.append({
+            "email": primary.email,
+            "name": primary.name,
+            "commits": group["commits"],
+            "lines_changed": group["lines_changed"],
+            "prs": group["prs"],
+            "quality_score": round(quality_score, 1),
+            "impact_score": round(impact_score, 1),
+            "pr_quality_score": round(pr_quality_score, 1),
+            "pr_prs_analyzed": pr_prs_analyzed,
+            "merged_emails": group["merged_emails"],
+        })
+
+    entries.sort(key=lambda x: x["impact_score"], reverse=True)
+    entries = entries[:limit]
 
     return [
         LeaderboardEntry(
             rank=i + 1,
-            email=contributor.email,
-            name=contributor.name,
-            commits=stats.commits,
-            lines_changed=stats.lines_added + stats.lines_removed,
-            prs=stats.prs,
-            quality_score=round(stats.quality_score, 1),
-            impact_score=round(stats.impact_score, 1)
+            email=entry["email"],
+            name=entry["name"],
+            commits=entry["commits"],
+            lines_changed=entry["lines_changed"],
+            prs=entry["prs"],
+            quality_score=entry["quality_score"],
+            impact_score=entry["impact_score"],
+            pr_quality_score=entry["pr_quality_score"],
+            pr_prs_analyzed=entry["pr_prs_analyzed"],
+            merged_count=len(entry["merged_emails"]),
+            merged_emails=entry["merged_emails"],
         )
-        for i, (stats, contributor) in enumerate(rows)
+        for i, entry in enumerate(entries)
     ]
 
 
@@ -385,8 +715,11 @@ async def global_stats(session: AsyncSession = Depends(get_session)):
     # Repository count
     repo_count = await session.execute(select(func.count(Repository.id)))
 
-    # Contributor count
-    contrib_count = await session.execute(select(func.count(Contributor.id)))
+    # Contributor count (exclude merged contributors)
+    merged_subquery = select(ContributorMerge.merged_contributor_id)
+    contrib_count = await session.execute(
+        select(func.count(Contributor.id)).where(~Contributor.id.in_(merged_subquery))
+    )
 
     # Commit count
     commit_count = await session.execute(select(func.count(Commit.id)))
@@ -667,6 +1000,31 @@ async def run_analysis(repo_path: Path, run_id: int, use_llm: bool = True):
                 )
                 quality_reports = {r.sha: r.overall_score for r in reports}
 
+            # PR quality analysis per contributor (heuristic PR detection)
+            pr_quality_by_email = await quality_analyzer.analyze_pull_requests(
+                git_analyzer,
+                commit_infos,
+                use_llm=use_llm
+            )
+
+            # Static codebase analysis
+            codebase_report = analyze_codebase(repo_path)
+            await session.execute(
+                delete(CodebaseAnalysis).where(CodebaseAnalysis.repository_id == repo.id)
+            )
+            session.add(
+                CodebaseAnalysis(
+                    repository_id=repo.id,
+                    overall_score=codebase_report.overall_score,
+                    complexity_score=codebase_report.complexity_score,
+                    dependency_score=codebase_report.dependency_score,
+                    comment_score=codebase_report.comment_score,
+                    test_score=codebase_report.test_score,
+                    metrics_json=json.dumps(codebase_report.to_dict()),
+                )
+            )
+            await session.commit()
+
             # Process contributor metrics
             for commit_info in commit_infos:
                 quality_score = quality_reports.get(commit_info.sha)
@@ -717,6 +1075,9 @@ async def run_analysis(repo_path: Path, run_id: int, use_llm: bool = True):
                 contributor.total_prs = metrics.prs
                 contributor.quality_score = metrics.average_quality
                 contributor.impact_score = metrics.impact_score
+                pr_scores = pr_quality_by_email.get(email, [])
+                contributor.pr_prs_analyzed = len(pr_scores)
+                contributor.pr_quality_score = round(sum(pr_scores) / len(pr_scores), 2) if pr_scores else 0.0
                 contributor.first_commit = metrics.first_commit
                 contributor.last_commit = metrics.last_commit
 
@@ -741,6 +1102,8 @@ async def run_analysis(repo_path: Path, run_id: int, use_llm: bool = True):
                 stats.branches_touched = metrics.branches_count
                 stats.quality_score = metrics.average_quality
                 stats.impact_score = metrics.impact_score
+                stats.pr_quality_score = round(sum(pr_scores) / len(pr_scores), 2) if pr_scores else 0.0
+                stats.pr_prs_analyzed = len(pr_scores)
                 stats.first_commit = metrics.first_commit
                 stats.last_commit = metrics.last_commit
                 stats.commit_frequency = metrics.commit_frequency

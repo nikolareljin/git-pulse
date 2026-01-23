@@ -54,6 +54,8 @@ class Contributor(Base):
     total_prs = Column(Integer, default=0)
     quality_score = Column(Float, default=0.0)
     impact_score = Column(Float, default=0.0)
+    pr_quality_score = Column(Float, default=0.0)
+    pr_prs_analyzed = Column(Integer, default=0)
     first_commit = Column(DateTime, nullable=True)
     last_commit = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -114,6 +116,8 @@ class ContributorStats(Base):
     branches_touched = Column(Integer, default=0)
     quality_score = Column(Float, default=0.0)
     impact_score = Column(Float, default=0.0)
+    pr_quality_score = Column(Float, default=0.0)
+    pr_prs_analyzed = Column(Integer, default=0)
     rank = Column(Integer, nullable=True)
     first_commit = Column(DateTime, nullable=True)
     last_commit = Column(DateTime, nullable=True)
@@ -146,6 +150,36 @@ class AnalysisRun(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CodebaseAnalysis(Base):
+    """Static codebase analysis results per repository."""
+    __tablename__ = "codebase_analyses"
+
+    id = Column(Integer, primary_key=True)
+    repository_id = Column(Integer, ForeignKey("repositories.id"), nullable=False, unique=True)
+    overall_score = Column(Float, default=0.0)
+    complexity_score = Column(Float, default=0.0)
+    dependency_score = Column(Float, default=0.0)
+    comment_score = Column(Float, default=0.0)
+    test_score = Column(Float, default=0.0)
+    metrics_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ContributorMerge(Base):
+    """Represents a merged contributor mapping (merged -> primary)"""
+    __tablename__ = "contributor_merges"
+
+    id = Column(Integer, primary_key=True)
+    primary_contributor_id = Column(Integer, ForeignKey("contributors.id"), nullable=False)
+    merged_contributor_id = Column(Integer, ForeignKey("contributors.id"), nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_merge_primary", "primary_contributor_id"),
+        Index("idx_merge_merged", "merged_contributor_id", unique=True),
+    )
+
+
 # Database engine and session
 engine = None
 SessionLocal = None
@@ -165,6 +199,30 @@ async def init_db():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_schema(conn, db_url)
+
+
+async def _ensure_schema(conn, db_url: str) -> None:
+    """Lightweight schema migration for SQLite."""
+    if not db_url.startswith("sqlite"):
+        return
+
+    async def column_exists(table: str, column: str) -> bool:
+        result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+        rows = result.fetchall()
+        return any(row[1] == column for row in rows)
+
+    # Contributors
+    if not await column_exists("contributors", "pr_quality_score"):
+        await conn.exec_driver_sql("ALTER TABLE contributors ADD COLUMN pr_quality_score FLOAT DEFAULT 0.0")
+    if not await column_exists("contributors", "pr_prs_analyzed"):
+        await conn.exec_driver_sql("ALTER TABLE contributors ADD COLUMN pr_prs_analyzed INTEGER DEFAULT 0")
+
+    # Contributor stats
+    if not await column_exists("contributor_stats", "pr_quality_score"):
+        await conn.exec_driver_sql("ALTER TABLE contributor_stats ADD COLUMN pr_quality_score FLOAT DEFAULT 0.0")
+    if not await column_exists("contributor_stats", "pr_prs_analyzed"):
+        await conn.exec_driver_sql("ALTER TABLE contributor_stats ADD COLUMN pr_prs_analyzed INTEGER DEFAULT 0")
 
 
 async def get_session() -> AsyncSession:

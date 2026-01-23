@@ -327,3 +327,60 @@ class QualityAnalyzer:
                 await asyncio.sleep(0.1)
 
         return reports
+
+    async def analyze_pull_requests(
+        self,
+        git_analyzer,
+        commits: List[CommitInfo],
+        use_llm: bool = True
+    ) -> Dict[str, List[float]]:
+        """Analyze PRs and return per-contributor PR quality scores."""
+        commit_map = {c.sha: c for c in commits}
+        pr_scores: Dict[str, List[float]] = {}
+
+        for pr in git_analyzer.iter_pull_requests():
+            contributors: Dict[str, List[CommitInfo]] = {}
+            for sha in pr.commit_shas:
+                commit = commit_map.get(sha)
+                if not commit:
+                    commit = git_analyzer.get_commit_by_sha(sha)
+                if not commit:
+                    continue
+                contributors.setdefault(commit.author_email, []).append(commit)
+
+            for email, commit_list in contributors.items():
+                diff_content = ""
+                for commit in commit_list:
+                    if not commit.diff_content:
+                        continue
+                    space_left = config.MAX_DIFF_SIZE - len(diff_content)
+                    if space_left <= 0:
+                        break
+                    diff_content += commit.diff_content[:space_left]
+
+                if len(diff_content) < 10:
+                    continue
+
+                report = await self.analyze_commit(
+                    CommitInfo(
+                        sha=pr.merge_sha,
+                        author_name=commit_list[0].author_name if commit_list else "",
+                        author_email=email,
+                        message=f"PR: {pr.title}",
+                        committed_at=commit_list[0].committed_at if commit_list else commits[0].committed_at,
+                        branch=commit_list[0].branch if commit_list else "unknown",
+                        lines_added=0,
+                        lines_removed=0,
+                        files_changed=0,
+                        is_merge=True,
+                        is_pr=True,
+                        diff_content=diff_content,
+                    ),
+                    use_llm=use_llm
+                )
+                pr_scores.setdefault(email, []).append(report.overall_score)
+
+                if use_llm:
+                    await asyncio.sleep(0.1)
+
+        return pr_scores

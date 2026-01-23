@@ -6,6 +6,8 @@ from app.models.database import (
     Commit,
     ContributorStats,
     AnalysisRun,
+    ContributorMerge,
+    CodebaseAnalysis,
     get_session,
     init_db,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "Commit",
     "ContributorStats",
     "AnalysisRun",
+    "ContributorMerge",
+    "CodebaseAnalysis",
     "get_session",
     "init_db",
 ]
