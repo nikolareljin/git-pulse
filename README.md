@@ -47,10 +47,13 @@ AI-powered Git repository contributor analysis tool. Analyzes multiple repositor
 git clone <repo-url> git-pulse
 cd git-pulse
 
-# Start services (Ollama + App)
-docker-compose up -d
+# Start services (Ollama + App) with scripts
+./scripts/start.sh --docker
 
-# Or run locally for development
+# Stop services
+./scripts/stop.sh --docker
+
+# Or run locally for development (no Docker)
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -70,6 +73,26 @@ git clone https://github.com/user/repo2.git
 ### Access the Dashboard
 
 Open http://localhost:8000 in your browser.
+
+## Using the App (Scripts)
+
+```bash
+# Start with Docker (app + Ollama)
+./scripts/start.sh --docker
+
+# Rebuild containers and start
+./scripts/start.sh --docker -b
+
+# Stop Docker services
+./scripts/stop.sh --docker
+
+# Start locally with auto-reload
+./scripts/start.sh --dev
+```
+
+## Docs
+
+See `docs/README.md` for a detailed feature overview and usage guide.
 
 ## Configuration
 
