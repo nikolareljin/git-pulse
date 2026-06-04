@@ -12,7 +12,7 @@ aiosqlite==0.19.0
 
 # HTTP client for Ollama
 httpx==0.26.0
-aiohttp==3.13.5
+aiohttp==3.14.0
 
 # Data processing
 pydantic==2.5.3
