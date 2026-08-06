@@ -166,3 +166,11 @@ docker exec -it ollama ollama pull codellama:7b
 ## License
 
 MIT
+
+---
+
+## Clone traffic
+
+![Clone traffic](https://raw.githubusercontent.com/nikolareljin/stats/main/charts/git-pulse.svg)
+
+_Updated daily. Total and unique cloners over the last 14 days._
