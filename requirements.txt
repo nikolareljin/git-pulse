@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.0
 jinja2==3.1.6
 
 # Git analysis
-GitPython==3.1.41
+GitPython==3.1.58
 
 # Database
 sqlalchemy==2.0.25
@@ -12,7 +12,7 @@ aiosqlite==0.19.0
 
 # HTTP client for Ollama
 httpx==0.26.0
-aiohttp==3.14.0
+aiohttp==3.14.3
 
 # Data processing
 pydantic==2.5.3
