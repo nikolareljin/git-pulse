@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.0
 jinja2==3.1.6
 
 # Git analysis
-GitPython==3.1.58
+GitPython==3.1.62
 
 # Database
 sqlalchemy==2.0.25
