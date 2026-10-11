@@ -26,7 +26,7 @@ AI-powered Git repository contributor analysis tool. Analyzes multiple repositor
 │                                       └──────────┬──────────┘   │
 │                                                  │              │
 │  ┌─────────────┐   ┌─────────────┐   ┌──────────▼──────────┐   │
-│  │ Repositories│   │  Database   │   │  Ollama (Docker)    │   │
+│  │ Repositories│   │  Database   │   │  Ollama (host)      │   │
 │  │ ./repos/*   │   │  SQLite     │   │  Code Quality LLM   │   │
 │  └─────────────┘   └─────────────┘   └─────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -47,8 +47,8 @@ AI-powered Git repository contributor analysis tool. Analyzes multiple repositor
 git clone <repo-url> git-pulse
 cd git-pulse
 
-# Start services (Ollama + App) with scripts
-./scripts/start.sh --docker
+# Start the app in Docker (checks the Ollama model first)
+./start --docker
 
 # Stop services
 ./scripts/stop.sh --docker
@@ -77,7 +77,7 @@ Open http://localhost:8000 in your browser.
 ## Using the App (Scripts)
 
 ```bash
-# Start with Docker (app + Ollama)
+# Start with Docker (the app; Ollama is the machine's own)
 ./scripts/start.sh --docker
 
 # Rebuild containers and start
@@ -100,8 +100,9 @@ Edit `config.py` or set environment variables:
 
 ```bash
 # Ollama settings
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=codellama:7b
+OLLAMA_RUNTIME=host                    # or container (see "Ollama" below)
+OLLAMA_HOST=http://localhost:11434     # local app
+OLLAMA_MODEL=                          # empty: ai-models.env decides
 
 # Analysis settings
 ANALYSIS_DEPTH=full          # full | recent | shallow
@@ -147,7 +148,7 @@ DATABASE_URL=sqlite:///data/gitpulse.db
 
 - **Backend**: Python, FastAPI
 - **Database**: SQLite
-- **AI/LLM**: Ollama with CodeLlama
+- **AI/LLM**: Ollama, the code model in `ai-models.env`
 - **Git Analysis**: GitPython
 - **Frontend**: Vanilla JS, Chart.js
 - **Container**: Docker, Docker Compose
@@ -158,10 +159,30 @@ DATABASE_URL=sqlite:///data/gitpulse.db
 # Run in development mode
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Run Ollama separately
-docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
-docker exec -it ollama ollama pull codellama:7b
 ```
+
+## Ollama
+
+GitPulse uses the machine's own Ollama by default: `http://localhost:11434`
+for a local app, `http://host.docker.internal:11434` from the app container
+(`OLLAMA_BASE_URL_DOCKER`). The model is `OLLAMA_MODEL` in `ai-models.env`,
+generated from the fleet model registry (the code model, `qwen2.5-coder:7b`);
+do not edit it, set `OLLAMA_MODEL` in `.env` to use another model on one
+machine.
+
+`./start` (or `./scripts/start.sh`) checks that the Ollama has the model first
+and offers to pull a missing one; with no terminal it stops and names the pull.
+It needs the script-helpers submodule: `git submodule update --init`.
+`GITPULSE_SKIP_OLLAMA=1` skips the check.
+
+The host's Ollama is the default and preferred; `./start` never switches away
+from it on its own. Only if Ollama is not installed or cannot run on the host,
+and only if absolutely necessary: `OLLAMA_RUNTIME=container`
+in `.env` makes `./start --docker` add `docker-ollama.yml`, a compose override
+with an `ollama` container on `127.0.0.1:${OLLAMA_CONTAINER_PORT:-11435}`,
+check the model in it, and point the app at it. `./scripts/stop.sh --docker`
+always includes that file, so the container is stopped too. Its models live in the external volume
+`git-pulse_ollama_data`, which `docker compose down -v` does not remove.
 
 ## License
 

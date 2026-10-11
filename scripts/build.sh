@@ -103,12 +103,7 @@ fi
 if [[ "$PULL_MODEL" == "true" ]]; then
     log_info "Pulling Ollama model..."
 
-    if docker ps | grep -q gitpulse-ollama; then
-        docker exec gitpulse-ollama ollama pull codellama:7b
-    else
-        log_warn "Ollama container not running. Start with: ./scripts/start.sh --docker"
-        log_info "Then run: docker exec -it gitpulse-ollama ollama pull codellama:7b"
-    fi
+    log_info "The model is checked, and pulled after a yes, by ./start (OLLAMA_MODEL in ai-models.env)."
 fi
 
 # Create necessary directories

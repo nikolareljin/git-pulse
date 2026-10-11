@@ -1,0 +1,36 @@
+# Optional: an Ollama container for a machine without its own Ollama.
+# Used only with OLLAMA_RUNTIME=container in .env, when ./start --docker and
+# ./scripts/stop.sh --docker add it:
+#   docker compose -f docker-compose.yml -f docker-ollama.yml ...
+# 11434 belongs to the host's Ollama, so it is published on 11435.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gitpulse-ollama
+    ports:
+      - "127.0.0.1:${OLLAMA_CONTAINER_PORT:-11435}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # GPU support is optional - uncomment below if nvidia GPU available
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  gitpulse:
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+
+volumes:
+  # Its models. External, with the name compose gave it before:
+  # `docker compose down -v` must not remove gigabytes of models.
+  # ./start creates it.
+  ollama_data:
+    external: true
+    name: git-pulse_ollama_data

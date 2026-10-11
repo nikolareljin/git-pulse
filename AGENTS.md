@@ -21,7 +21,7 @@ git-pulse/
 │   └── js/               # JavaScript
 ├── repositories/          # Git repos to analyze (not committed)
 ├── data/                  # SQLite database (not committed)
-├── docker-compose.yml     # Docker services (Ollama + App)
+├── docker-compose.yml     # Docker services (App); docker-ollama.yml: optional Ollama container
 ├── Dockerfile            # App container
 ├── requirements.txt      # Python dependencies
 └── config.py             # Configuration settings
@@ -47,8 +47,8 @@ python -m app.main
 
 ### Docker Deployment
 ```bash
-# Start all services (Ollama + App)
-docker-compose up -d
+# Start the app (checks the Ollama model in ai-models.env first)
+./start --docker
 
 # View logs
 docker-compose logs -f gitpulse
@@ -59,10 +59,8 @@ docker-compose down
 
 ### Ollama Setup
 ```bash
-# Pull required model
-docker exec -it gitpulse-ollama ollama pull codellama:7b
-
-# Test Ollama
+# The machine's own Ollama; ./start checks OLLAMA_MODEL (ai-models.env)
+# and offers to pull it. OLLAMA_RUNTIME=container uses the fallback container.
 curl http://localhost:11434/api/tags
 ```
 
