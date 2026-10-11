@@ -129,7 +129,8 @@ gp_ensure_ollama_models() {
 
   ollama_project_ensure_models "$root/ai-models.env" "$root/.env" OLLAMA_MODEL || rc=$?
   if [[ "$rc" -eq 4 ]]; then
-    log_error "No Ollama on this machine answers. Install one, or use the container fallback: OLLAMA_RUNTIME=container in .env."
+    log_error "The host Ollama does not answer. Start it (or install it): that is the default and preferred."
+    log_error "Only if Ollama cannot run on this host: OLLAMA_RUNTIME=container in .env uses the optional Ollama in Docker (docker-ollama.yml)."
   fi
   [[ "$rc" -eq 0 ]] || return "$rc"
   # Answering on 127.0.0.1 does not prove the app container can reach it.
