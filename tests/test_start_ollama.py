@@ -133,3 +133,14 @@ def test_ai_models_file_parsing(tmp_path):
     f.write_text('﻿# c\nexport OLLAMA_MODEL = "a:1b"  # x\nOTHER=b\n\nbad line\n', encoding="utf-8")
     assert config.ai_models(f) == {"OLLAMA_MODEL": "a:1b", "OTHER": "b"}
     assert config.ai_models(tmp_path / "missing") == {}
+
+
+def test_a_local_app_gets_the_model_from_env(tmp_path):
+    out, _ = _run(tmp_path, mode="local", env_file="OLLAMA_MODEL=other:1b\n")
+    assert "wins over coder:7b" in out, out
+    script_out = subprocess.run(
+        ["bash", "-c", f'log_error() {{ :; }}; ollama_models_file_get() {{ sed -n "s/^$2=//p" "$1"; }}; '
+         f'source "{ROOT}/scripts/ollama.sh"; gp_ollama_runtime "{tmp_path}" local; echo "model=$OLLAMA_MODEL"'],
+        capture_output=True, text=True, env={k: v for k, v in os.environ.items() if not k.startswith("OLLAMA_")},
+    ).stdout
+    assert "model=other:1b" in script_out, script_out

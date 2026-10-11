@@ -16,7 +16,6 @@ DATA_DIR.mkdir(exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR}/gitpulse.db")
 
 
-
 def ai_models(path: Path = BASE_DIR / "ai-models.env") -> dict:
     """NAME=model lines of ai-models.env (generated from the fleet model registry)."""
     models = {}

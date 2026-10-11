@@ -49,6 +49,10 @@ gp_ollama_runtime() {
       else
         url="${OLLAMA_HOST:-http://localhost:11434}"
         export OLLAMA_HOST="$url"
+        # The local app does not read .env; give it the model the check uses.
+        local model
+        model="$(_gp_setting OLLAMA_MODEL "$root")"
+        [[ -z "$model" ]] || export OLLAMA_MODEL="$model"
       fi
       export GP_OLLAMA_URL="$url"
       ;;
