@@ -41,7 +41,9 @@ done
 
 if [[ "$USE_DOCKER" == "true" ]]; then
     log_info "Stopping Docker Compose services..."
-    docker compose down
+    # The profiled ollama fallback too. Volumes are kept (no -v); its models
+    # volume is external and survives -v anyway.
+    docker compose --profile ollama down
     log_info "Services stopped"
 else
     log_info "Stopping local GitPulse processes..."

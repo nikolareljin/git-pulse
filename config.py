@@ -15,9 +15,25 @@ DATA_DIR.mkdir(exist_ok=True)
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR}/gitpulse.db")
 
-# Ollama settings
+
+
+def ai_models(path: Path = BASE_DIR / "ai-models.env") -> dict:
+    """NAME=model lines of ai-models.env (generated from the fleet model registry)."""
+    models = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = line.split(" #", 1)[0].strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.removeprefix("export ").split("=", 1)
+            models[name.strip()] = value.strip().strip("'\"")
+    return models
+
+
+# Ollama settings. The model: OLLAMA_MODEL in the environment (from .env via
+# compose), else ai-models.env. An empty value counts as unset.
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "codellama:7b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or ai_models().get("OLLAMA_MODEL", "")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 # Analysis settings

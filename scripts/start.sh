@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # GitPulse - Start Script
-# Starts the GitPulse application and Ollama service
+# Starts the GitPulse application, after checking its Ollama has the model
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -12,14 +12,15 @@ SCRIPT_HELPERS_DIR="${SCRIPT_HELPERS_DIR:-$ROOT_DIR/vendor/script-helpers}"
 if [[ -f "$SCRIPT_HELPERS_DIR/helpers.sh" ]]; then
     # shellcheck disable=SC1091
     source "$SCRIPT_HELPERS_DIR/helpers.sh"
-    shlib_import logging
+    shlib_import logging ollama_endpoint
 else
-    log_info() { echo "[INFO] $*"; }
-    log_warn() { echo "[WARN] $*"; }
-    log_error() { echo "[ERROR] $*"; }
+    echo "[ERROR] Missing script-helpers. Run: git submodule update --init vendor/script-helpers" >&2
+    exit 1
 fi
 
 cd "$ROOT_DIR"
+# shellcheck source=scripts/ollama.sh
+source "$SCRIPT_DIR/ollama.sh"
 
 # Parse arguments
 USE_DOCKER=false
@@ -44,10 +45,24 @@ for arg in "$@"; do
             echo "  --docker    Use Docker Compose to start services"
             echo "  --dev       Start in development mode with auto-reload"
             echo "  -b, --build Rebuild Docker containers before starting"
+            echo ""
+            echo "The model is OLLAMA_MODEL in ai-models.env; it is checked first and a"
+            echo "missing one is pulled after a yes. GITPULSE_SKIP_OLLAMA=1 skips the check."
+            echo "OLLAMA_RUNTIME=container in .env uses the ollama container instead of the"
+            echo "machine's Ollama."
             exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg (see --help)" >&2
+            exit 1
             ;;
     esac
 done
+
+mode=local
+[[ "$USE_DOCKER" != "true" ]] || mode=docker
+gp_ollama_runtime "$ROOT_DIR" "$mode" || exit
+gp_ensure_ollama_models "$ROOT_DIR" "$mode" || exit
 
 if [[ "$USE_DOCKER" == "true" ]]; then
     log_info "Starting GitPulse with Docker Compose..."
@@ -65,18 +80,11 @@ if [[ "$USE_DOCKER" == "true" ]]; then
         docker compose up -d
     fi
 
-    log_info "Waiting for services to start..."
-    sleep 5
-
-    # Pull model if not already done
-    log_info "Ensuring Ollama model is available..."
-    docker exec gitpulse-ollama ollama pull codellama:7b 2>/dev/null || true
-
     log_info "GitPulse is running!"
     echo ""
     echo "  Dashboard: http://localhost:8000"
     echo "  API Docs:  http://localhost:8000/docs"
-    echo "  Ollama:    http://localhost:11434"
+    echo "  Ollama:    ${GP_OLLAMA_URL} (${GP_OLLAMA_RUNTIME})"
     echo ""
     echo "To view logs: docker compose logs -f"
     echo "To stop:      ./scripts/stop.sh --docker"

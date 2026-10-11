@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Start GitPulse: checks the Ollama model, then runs the app. See ./start --help.
+set -euo pipefail
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/start.sh" "$@"
