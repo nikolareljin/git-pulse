@@ -175,10 +175,11 @@ and offers to pull a missing one; with no terminal it stops and names the pull.
 It needs the script-helpers submodule: `git submodule update --init`.
 `GITPULSE_SKIP_OLLAMA=1` skips the check.
 
-No Ollama on the machine? `OLLAMA_RUNTIME=container` in `.env` makes
-`./start --docker` run the `ollama` service of `docker-compose.yml` (compose
-profile `ollama`) on `127.0.0.1:${OLLAMA_CONTAINER_PORT:-11435}`, check the
-model in it, and point the app at it. Its models live in the external volume
+No Ollama on the machine? Optional, only if needed: `OLLAMA_RUNTIME=container`
+in `.env` makes `./start --docker` add `docker-ollama.yml`, a compose override
+with an `ollama` container on `127.0.0.1:${OLLAMA_CONTAINER_PORT:-11435}`,
+check the model in it, and point the app at it. `./scripts/stop.sh --docker`
+always includes that file, so the container is stopped too. Its models live in the external volume
 `git-pulse_ollama_data`, which `docker compose down -v` does not remove.
 
 ## License

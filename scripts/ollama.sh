@@ -5,8 +5,8 @@
 # OLLAMA_RUNTIME=host (default): the machine's one Ollama. The app container
 # reaches it at OLLAMA_BASE_URL_DOCKER (default host.docker.internal:11434), a
 # local app at OLLAMA_HOST (default localhost:11434).
-# OLLAMA_RUNTIME=container: the fallback, the profiled `ollama` service in
-# docker-compose.yml on 127.0.0.1:OLLAMA_CONTAINER_PORT (default 11435), models
+# OLLAMA_RUNTIME=container: the optional container in docker-ollama.yml (a
+# compose override) on 127.0.0.1:OLLAMA_CONTAINER_PORT (default 11435), models
 # in the external volume git-pulse_ollama_data.
 
 GP_OLLAMA_VOLUME="git-pulse_ollama_data"
@@ -27,7 +27,7 @@ _gp_names_the_container() {
 }
 
 # Decides the Ollama and exports what compose and the app read:
-# COMPOSE_PROFILES, OLLAMA_BASE_URL_DOCKER (docker) or OLLAMA_HOST (local),
+# COMPOSE_FILE, OLLAMA_BASE_URL_DOCKER (docker) or OLLAMA_HOST (local),
 # and GP_OLLAMA_URL, the address the model check asks.
 #   gp_ollama_runtime <root> docker|local
 gp_ollama_runtime() {
@@ -55,6 +55,7 @@ gp_ollama_runtime() {
         [[ -z "$model" ]] || export OLLAMA_MODEL="$model"
       fi
       export GP_OLLAMA_URL="$url"
+      export COMPOSE_FILE=docker-compose.yml
       ;;
     container)
       port="$(_gp_setting OLLAMA_CONTAINER_PORT "$root")"
@@ -64,13 +65,13 @@ gp_ollama_runtime() {
         return 9
       fi
       export OLLAMA_CONTAINER_PORT="$((10#$port))"
-      export COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}ollama"
+      export COMPOSE_FILE=docker-compose.yml:docker-ollama.yml
       export OLLAMA_BASE_URL_DOCKER=http://ollama:11434
       [[ "$mode" == "docker" ]] || export OLLAMA_HOST="http://127.0.0.1:${OLLAMA_CONTAINER_PORT}"
       export GP_OLLAMA_URL=http://ollama:11434
       ;;
     *)
-      log_error "OLLAMA_RUNTIME=$GP_OLLAMA_RUNTIME: use host (the machine's Ollama) or container (the ollama service in docker-compose.yml)."
+      log_error "OLLAMA_RUNTIME=$GP_OLLAMA_RUNTIME: use host (the machine's Ollama) or container (the optional container in docker-ollama.yml)."
       return 9
       ;;
   esac

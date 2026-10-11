@@ -1,25 +1,4 @@
 services:
-  # The fallback, off by default: OLLAMA_RUNTIME=container in .env makes
-  # ./start --docker run it (compose profile "ollama"), check the model in it,
-  # and point the app at it. 11434 belongs to the host's Ollama.
-  ollama:
-    image: ollama/ollama:latest
-    container_name: gitpulse-ollama
-    profiles: ["ollama"]
-    ports:
-      - "127.0.0.1:${OLLAMA_CONTAINER_PORT:-11435}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    # GPU support is optional - uncomment below if nvidia GPU available
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
   gitpulse:
     build: .
     container_name: gitpulse-app
@@ -29,8 +8,8 @@ services:
       - ./repositories:/app/repositories:ro
       - ./data:/app/data
     environment:
-      # The machine's one Ollama on the host; with OLLAMA_RUNTIME=container,
-      # ./start sets this to http://ollama:11434.
+      # The machine's one Ollama on the host. docker-ollama.yml (the optional
+      # container, OLLAMA_RUNTIME=container) points this at its ollama service.
       - OLLAMA_HOST=${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
       # Empty: the image's ai-models.env decides. Set OLLAMA_MODEL in .env to override.
       - OLLAMA_MODEL=${OLLAMA_MODEL:-}
@@ -38,11 +17,3 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-
-volumes:
-  # Models of the fallback container. External, with the name compose gave it
-  # before: `docker compose down -v` must not remove gigabytes of models.
-  # ./start creates it when OLLAMA_RUNTIME=container.
-  ollama_data:
-    external: true
-    name: git-pulse_ollama_data

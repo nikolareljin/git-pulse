@@ -28,7 +28,7 @@ ollama_project_ensure_models() {{ echo "ensure:${{!OLLAMA_URL_VARS}}:${{OLLAMA_M
 ollama_endpoint_container_reach() {{ echo "reach:$1"; return {reach_rc}; }}
 source "{ROOT}/scripts/ollama.sh"
 rc=0; gp_ollama_runtime "{tmp_path}" {mode} || rc=$?
-echo "runtime rc=$rc profiles=${{COMPOSE_PROFILES:-}} docker=${{OLLAMA_BASE_URL_DOCKER:-}} host=${{OLLAMA_HOST:-}}"
+echo "runtime rc=$rc files=${{COMPOSE_FILE:-}} docker=${{OLLAMA_BASE_URL_DOCKER:-}} host=${{OLLAMA_HOST:-}}"
 [ "$rc" -ne 0 ] || {{ gp_ensure_ollama_models "{tmp_path}" {mode}; echo "ensure rc=$?"; }}
 """
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OLLAMA_", "GITPULSE_", "GP_", "AI_", "COMPOSE_"))}
@@ -40,7 +40,7 @@ echo "runtime rc=$rc profiles=${{COMPOSE_PROFILES:-}} docker=${{OLLAMA_BASE_URL_
 
 def test_docker_uses_the_host_ollama_by_default(tmp_path):
     out, docker = _run(tmp_path)
-    assert "runtime rc=0 profiles= docker=http://host.docker.internal:11434" in out, out
+    assert "runtime rc=0 files=docker-compose.yml docker=http://host.docker.internal:11434" in out, out
     assert "ensure:http://host.docker.internal:11434:::standard:ask" in out
     assert "reach:http://host.docker.internal:11434" in out and "ensure rc=0" in out
     assert docker == ""
@@ -60,7 +60,7 @@ def test_a_docker_url_to_the_container_needs_the_container_runtime(tmp_path):
 
 def test_container_runtime_starts_it_and_checks_the_model_in_it(tmp_path):
     out, docker = _run(tmp_path, env_file="OLLAMA_RUNTIME=container\nOLLAMA_CONTAINER_PORT=11500\n")
-    assert "runtime rc=0 profiles=ollama docker=http://ollama:11434" in out, out
+    assert "runtime rc=0 files=docker-compose.yml:docker-ollama.yml docker=http://ollama:11434" in out, out
     assert "ensure:http://ollama:11434:docker:11500:standard:ask" in out
     assert "reach:" not in out
     assert "volume inspect git-pulse_ollama_data" in docker and "compose up -d ollama" in docker
@@ -110,8 +110,16 @@ def test_skip_skips_the_check(tmp_path):
     assert "ensure rc=0" in out and "ensure:" not in out, out
 
 
+def test_the_main_compose_file_has_no_ollama():
+    assert "ollama:" not in (ROOT / "docker-compose.yml").read_text().replace("ollama:11434", "")
+
+
+def test_stop_includes_the_ollama_file():
+    assert "-f docker-ollama.yml" in (ROOT / "scripts/stop.sh").read_text()
+
+
 def test_the_models_volume_survives_down_v():
-    block = (ROOT / "docker-compose.yml").read_text().split("\n  ollama_data:\n", 1)[1]
+    block = (ROOT / "docker-ollama.yml").read_text().split("\n  ollama_data:\n", 1)[1]
     assert "external: true" in block and "name: git-pulse_ollama_data" in block
 
 

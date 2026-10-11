@@ -21,7 +21,7 @@ git-pulse/
 │   └── js/               # JavaScript
 ├── repositories/          # Git repos to analyze (not committed)
 ├── data/                  # SQLite database (not committed)
-├── docker-compose.yml     # Docker services (App; Ollama fallback in profile "ollama")
+├── docker-compose.yml     # Docker services (App); docker-ollama.yml: optional Ollama container
 ├── Dockerfile            # App container
 ├── requirements.txt      # Python dependencies
 └── config.py             # Configuration settings
